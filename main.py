@@ -7,20 +7,23 @@ from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, WebAppInfo, InlineKeyboardMarkup
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL")  # https://xxx.bothost.tech
-PORT = int(os.getenv("PORT", 3000))
+WEBAPP_URL = os.getenv("WEBAPP_URL")
+PORT = int(os.getenv("PORT", 8080))
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 app = FastAPI()
 
-# Комнаты в памяти
 rooms = {}
 
 @app.get("/")
 async def index():
     with open("public/index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
+
+@app.get("/health")
+async def health():
+    return {"ok": True}
 
 @app.websocket("/ws/{room_id}")
 async def ws_endpoint(websocket: WebSocket, room_id: str):
@@ -68,6 +71,7 @@ async def cmd_start(message: types.Message):
     await message.answer("Жми кнопку чтобы открыть комнату 👇", reply_markup=kb)
 
 async def run_bot():
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 async def run_server():
