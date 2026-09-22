@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watch Together</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body { margin:0; background:#17212b; color:#fff; font-family:-apple-system,sans-serif; }
+  video { width:100%; background:#000; display:block; }
+  .controls { padding:12px; display:flex; gap:8px; flex-wrap:wrap; }
+  input { flex:1; min-width:180px; padding:10px; border-radius:8px; border:none; background:#232e3c; color:#fff; font-size:14px; }
+  button { padding:10px 16px; border-radius:8px; border:none; background:#5288c1; color:#fff; font-size:14px; }
+  .status { padding:0 12px 12px; color:#7d8b99; font-size:12px; }
+</style>
+</head>
+<body>
+<video id="video" controls playsinline></video>
+<div class="controls">
+  <input id="url" placeholder="Ссылка на mp4 видео" />
+  <button onclick="setVideo()">Загрузить</button>
+</div>
+<div class="status" id="status">Подключение...</div>
+<script>
+const tg = window.Telegram?.WebApp;
+tg?.ready();
+tg?.expand();
+
+const roomId = new URLSearchParams(location.search).get("room") || "default";
+const video = document.getElementById("video");
+const statusEl = document.getElementById("status");
+const urlInput = document.getElementById("url");
+
+let ws, suppress = false;
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws/${roomId}`);
+  ws.onopen = () => statusEl.textContent = "✅ Подключено";
+  ws.onclose = () => { statusEl.textContent = "⏳ Переподключение..."; setTimeout(connect, 2000); };
+  ws.onmessage = e => handleRemote(JSON.parse(e.data));
+}
+
+function send(msg) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+}
+
+function handleRemote(msg) {
+  suppress = true;
+  if (msg.type === "state") {
+    const s = msg.state;
+    if (s.video_url && !video.src.endsWith(s.video_url)) video.src = s.video_url;
+    video.currentTime = s.time || 0;
+    s.is_playing ? video.play().catch(()=>{}) : video.pause();
+  } else if (msg.type === "set_video") {
+    video.src = msg.url; video.currentTime = 0;
+  } else if (msg.type === "play") {
+    video.currentTime = msg.time ?? video.currentTime;
+    video.play().catch(()=>{});
+  } else if (msg.type === "pause") {
+    video.pause();
+    if (msg.time != null) video.currentTime = msg.time;
+  } else if (msg.type === "seek") {
+    video.currentTime = msg.time;
+  }
+  setTimeout(() => suppress = false, 200);
+}
+
+function setVideo() {
+  const url = urlInput.value.trim();
+  if (!url) return;
+  video.src = url;
+  send({ type: "set_video", url });
+}
+
+video.addEventListener("play", () => { if (!suppress) send({ type: "play", time: video.currentTime }); });
+video.addEventListener("pause", () => { if (!suppress) send({ type: "pause", time: video.currentTime }); });
+video.addEventListener("seeked", () => { if (!suppress) send({ type: "seek", time: video.currentTime }); });
+
+connect();
+</script>
+</body>
+</html>
